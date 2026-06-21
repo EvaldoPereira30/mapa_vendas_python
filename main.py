@@ -230,6 +230,33 @@ def gerar_rede(estoque: pd.DataFrame, vendas: pd.DataFrame) -> pd.DataFrame:
 
     return rede
 
+def formatar_excel(caminho_arquivo):
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font, Alignment
+    from openpyxl.utils import get_column_letter
+
+    wb = load_workbook(caminho_arquivo)
+
+    for ws in wb.worksheets:
+        ws.auto_filter.ref = ws.dimensions
+        ws.freeze_panes = "A2"
+
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+        for column_cells in ws.columns:
+            max_length = 0
+            column_letter = get_column_letter(column_cells[0].column)
+
+            for cell in column_cells:
+                if cell.value is not None:
+                    max_length = max(max_length, len(str(cell.value)))
+
+            ws.column_dimensions[column_letter].width = min(max_length + 2, 45)
+
+    wb.save(caminho_arquivo)
+    
 
 arquivo_estoque = Path("entrada/Estoque Abbott.txt")
 arquivo_vendas = Path("entrada/Vendas Abbott.txt")
@@ -268,6 +295,8 @@ arquivo_saida = pasta_saida / "Mapa de Vendas Teste.xlsx"
 with pd.ExcelWriter(arquivo_saida, engine="openpyxl") as writer:
     rede.to_excel(writer, sheet_name="Rede", index=False)
     lojas.to_excel(writer, sheet_name="Lojas", index=False)
+
+formatar_excel(arquivo_saida)
 
 print("Rede gerada:", len(rede), "linhas")
 print("Lojas geradas:", len(lojas), "linhas")
