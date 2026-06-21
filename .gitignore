@@ -1,0 +1,5 @@
+.venv/
+entrada/
+saida/
+__pycache__/
+*.pyc
