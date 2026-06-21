@@ -232,28 +232,53 @@ def gerar_rede(estoque: pd.DataFrame, vendas: pd.DataFrame) -> pd.DataFrame:
 
 def formatar_excel(caminho_arquivo):
     from openpyxl import load_workbook
-    from openpyxl.styles import Font, Alignment
+    from openpyxl.styles import Font, Alignment, PatternFill
     from openpyxl.utils import get_column_letter
 
     wb = load_workbook(caminho_arquivo)
 
+    azul = PatternFill(
+        fill_type="solid",
+        start_color="1F4E78",
+        end_color="1F4E78"
+    )
+
     for ws in wb.worksheets:
+
         ws.auto_filter.ref = ws.dimensions
         ws.freeze_panes = "A2"
 
+        ws.row_dimensions[1].height = 30
+
         for cell in ws[1]:
-            cell.font = Font(bold=True)
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.font = Font(
+                bold=True,
+                color="FFFFFF"
+            )
 
-        for column_cells in ws.columns:
-            max_length = 0
-            column_letter = get_column_letter(column_cells[0].column)
+            cell.fill = azul
 
-            for cell in column_cells:
-                if cell.value is not None:
-                    max_length = max(max_length, len(str(cell.value)))
+            cell.alignment = Alignment(
+                horizontal="center",
+                vertical="center",
+                wrap_text=True
+            )
 
-            ws.column_dimensions[column_letter].width = min(max_length + 2, 45)
+        for coluna in ws.columns:
+            largura = 0
+            letra = get_column_letter(coluna[0].column)
+
+            for celula in coluna:
+                if celula.value is not None:
+                    largura = max(
+                        largura,
+                        len(str(celula.value))
+                    )
+
+            ws.column_dimensions[letra].width = min(
+                largura + 2,
+                50
+            )
 
     wb.save(caminho_arquivo)
     
