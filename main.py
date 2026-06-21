@@ -290,7 +290,16 @@ rede = gerar_rede(estoque, vendas)
 pasta_saida = Path("saida")
 pasta_saida.mkdir(exist_ok=True)
 
-arquivo_saida = pasta_saida / "Mapa de Vendas Teste.xlsx"
+from datetime import datetime
+
+fabricante = rede["FABRICANTE"].dropna().iloc[0]
+
+data_hoje = datetime.now().strftime("%d.%m")
+
+nome_arquivo = f"Mapa de Vendas - {fabricante} {data_hoje}.xlsx"
+
+arquivo_saida = pasta_saida / nome_arquivo
+
 
 with pd.ExcelWriter(arquivo_saida, engine="openpyxl") as writer:
     rede.to_excel(writer, sheet_name="Rede", index=False)
