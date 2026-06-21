@@ -1,5 +1,6 @@
 from pathlib import Path
 from io import StringIO
+from datetime import datetime
 import pandas as pd
 
 
@@ -45,13 +46,68 @@ def ler_txt_a_partir_do_cabecalho(caminho: Path) -> pd.DataFrame:
     return df
 
 
+def obter_meses_vendas(caminho: Path) -> list[str]:
+    with open(caminho, encoding="cp1252") as arquivo:
+        linhas = arquivo.readlines()
+
+    for indice, linha in enumerate(linhas):
+        if "MesDataVenda" in linha:
+            if indice + 1 >= len(linhas):
+                raise ValueError("Linha dos meses não encontrada após MesDataVenda.")
+
+            linha_meses = linhas[indice + 1].strip()
+            partes = linha_meses.split(",")
+
+            meses = []
+
+            for parte in partes:
+                parte = parte.strip()
+
+                if parte != "":
+                    meses.append(parte.upper())
+
+            return meses
+
+    raise ValueError("Marcador MesDataVenda não encontrado no arquivo de vendas.")
+
+
+def nomes_colunas_vendas(meses: list[str]) -> dict:
+    meses = [mes.upper() for mes in meses[:4]]
+
+    colunas_qt = [
+        "QtdeItem",
+        "QtdeItem.1",
+        "QtdeItem.2",
+        "QtdeItem.3",
+    ]
+
+    colunas_vlr = [
+        "VlrLiqVenda",
+        "VlrLiqVenda.1",
+        "VlrLiqVenda.2",
+        "VlrLiqVenda.3",
+    ]
+
+    renomear = {}
+
+    for i, mes in enumerate(meses):
+        renomear[colunas_qt[i]] = f"QT {mes}"
+        renomear[colunas_vlr[i]] = f"VLR {mes}"
+
+    return renomear
+
+
 def limpar_linhas_sem_produto(df: pd.DataFrame, coluna_produto: str) -> pd.DataFrame:
     df = df[df[coluna_produto].notna()]
     df = df[df[coluna_produto].str.strip() != ""]
     return df
 
 
-def gerar_lojas(estoque: pd.DataFrame, vendas: pd.DataFrame) -> pd.DataFrame:
+def gerar_lojas(
+    estoque: pd.DataFrame,
+    vendas: pd.DataFrame,
+    meses: list[str],
+) -> pd.DataFrame:
     lojas = estoque.merge(
         vendas,
         how="outer",
@@ -107,20 +163,15 @@ def gerar_lojas(estoque: pd.DataFrame, vendas: pd.DataFrame) -> pd.DataFrame:
         ]
     ].copy()
 
+    renomear_vendas = nomes_colunas_vendas(meses)
+
     lojas_final = lojas_final.rename(
         columns={
             "CodFilial": "FILIAL",
             "StatusProduto": "Status Produtos",
             "QtEstoqueComercial": "QUANTIDADE ESTOQUE FILIAL ATUAL",
             "MediaF": "MEDIAF UN",
-            "QtdeItem": "QTDE ITENS ATUAL",
-            "VlrLiqVenda": "VENDA LIQUIDA ATUAL",
-            "QtdeItem.1": "QT MÊS -1",
-            "VlrLiqVenda.1": "VLR MÊS -1",
-            "QtdeItem.2": "QT MÊS -2",
-            "VlrLiqVenda.2": "VLR MÊS -2",
-            "QtdeItem.3": "QT MÊS -3",
-            "VlrLiqVenda.3": "VLR MÊS -3",
+            **renomear_vendas,
         }
     )
 
@@ -129,7 +180,11 @@ def gerar_lojas(estoque: pd.DataFrame, vendas: pd.DataFrame) -> pd.DataFrame:
     return lojas_final
 
 
-def gerar_rede(estoque: pd.DataFrame, vendas: pd.DataFrame) -> pd.DataFrame:
+def gerar_rede(
+    estoque: pd.DataFrame,
+    vendas: pd.DataFrame,
+    meses: list[str],
+) -> pd.DataFrame:
     estoque_lojas = estoque[estoque["CodFilial"] != "900"]
     estoque_cd = estoque[estoque["CodFilial"] == "900"]
 
@@ -179,17 +234,12 @@ def gerar_rede(estoque: pd.DataFrame, vendas: pd.DataFrame) -> pd.DataFrame:
         }
     )
 
+    renomear_vendas = nomes_colunas_vendas(meses)
+
     vendas_agrupadas = vendas_agrupadas.rename(
         columns={
             "CódigoProduto": "CD PROD",
-            "QtdeItem": "QTDE ITENS ATUAL",
-            "VlrLiqVenda": "VENDA LIQUIDA ATUAL",
-            "QtdeItem.1": "QT MÊS -1",
-            "VlrLiqVenda.1": "VLR MÊS -1",
-            "QtdeItem.2": "QT MÊS -2",
-            "VlrLiqVenda.2": "VLR MÊS -2",
-            "QtdeItem.3": "QT MÊS -3",
-            "VlrLiqVenda.3": "VLR MÊS -3",
+            **renomear_vendas,
         }
     )
 
@@ -204,31 +254,29 @@ def gerar_rede(estoque: pd.DataFrame, vendas: pd.DataFrame) -> pd.DataFrame:
 
     rede["Ean"] = rede["Ean"].fillna("S/ EAN Ativo")
 
-    rede = rede[
-        [
-            "Ean",
-            "CD PROD",
-            "PRODUTO",
-            "FABRICANTE",
-            "Linha",
-            "Status Produtos",
-            "EST UN FILIAL GERAL",
-            "EST UN CD GERAL",
-            "MEDIAF UN GERAL",
-            "QTDE ITENS ATUAL",
-            "VENDA LIQUIDA ATUAL",
-            "QT MÊS -1",
-            "VLR MÊS -1",
-            "QT MÊS -2",
-            "VLR MÊS -2",
-            "QT MÊS -3",
-            "VLR MÊS -3",
-        ]
-    ].copy()
+    colunas_finais = [
+        "Ean",
+        "CD PROD",
+        "PRODUTO",
+        "FABRICANTE",
+        "Linha",
+        "Status Produtos",
+        "EST UN FILIAL GERAL",
+        "EST UN CD GERAL",
+        "MEDIAF UN GERAL",
+    ]
+
+    for mes in meses[:4]:
+        mes = mes.upper()
+        colunas_finais.append(f"QT {mes}")
+        colunas_finais.append(f"VLR {mes}")
+
+    rede = rede[colunas_finais].copy()
 
     rede = rede.fillna(0)
 
     return rede
+
 
 def formatar_excel(caminho_arquivo):
     from openpyxl import load_workbook
@@ -240,11 +288,10 @@ def formatar_excel(caminho_arquivo):
     azul = PatternFill(
         fill_type="solid",
         start_color="1F4E78",
-        end_color="1F4E78"
+        end_color="1F4E78",
     )
 
     for ws in wb.worksheets:
-
         ws.auto_filter.ref = ws.dimensions
         ws.freeze_panes = "A2"
         ws.row_dimensions[1].height = 30
@@ -252,7 +299,7 @@ def formatar_excel(caminho_arquivo):
         for cell in ws[1]:
             cell.font = Font(
                 bold=True,
-                color="FFFFFF"
+                color="FFFFFF",
             )
 
             cell.fill = azul
@@ -260,7 +307,7 @@ def formatar_excel(caminho_arquivo):
             cell.alignment = Alignment(
                 horizontal="center",
                 vertical="center",
-                wrap_text=True
+                wrap_text=True,
             )
 
         for coluna in ws.columns:
@@ -271,19 +318,18 @@ def formatar_excel(caminho_arquivo):
                 if celula.value is not None:
                     largura = max(
                         largura,
-                        len(str(celula.value))
+                        len(str(celula.value)),
                     )
 
             ws.column_dimensions[letra].width = min(
                 largura + 2,
-                50
+                50,
             )
 
         for coluna in ws.iter_cols(min_row=2):
-
             cabecalho = ws.cell(
                 row=1,
-                column=coluna[0].column
+                column=coluna[0].column,
             ).value
 
             if cabecalho is None:
@@ -292,7 +338,6 @@ def formatar_excel(caminho_arquivo):
             cabecalho = str(cabecalho).upper()
 
             for celula in coluna:
-
                 if "VLR" in cabecalho or "VENDA LIQUIDA" in cabecalho:
                     celula.number_format = 'R$ #,##0.00'
 
@@ -303,7 +348,7 @@ def formatar_excel(caminho_arquivo):
                     celula.number_format = '#,##0.00'
 
     wb.save(caminho_arquivo)
-    
+
 
 pasta_entrada = Path("entrada")
 
@@ -317,16 +362,25 @@ if len(arquivos_vendas) == 0:
     raise FileNotFoundError("Nenhum arquivo de Vendas encontrado na pasta entrada.")
 
 if len(arquivos_estoque) > 1:
-    raise ValueError("Mais de um arquivo de Estoque encontrado. Deixe apenas um arquivo de Estoque na pasta entrada.")
+    raise ValueError(
+        "Mais de um arquivo de Estoque encontrado. "
+        "Deixe apenas um arquivo de Estoque na pasta entrada."
+    )
 
 if len(arquivos_vendas) > 1:
-    raise ValueError("Mais de um arquivo de Vendas encontrado. Deixe apenas um arquivo de Vendas na pasta entrada.")
+    raise ValueError(
+        "Mais de um arquivo de Vendas encontrado. "
+        "Deixe apenas um arquivo de Vendas na pasta entrada."
+    )
 
 arquivo_estoque = arquivos_estoque[0]
 arquivo_vendas = arquivos_vendas[0]
 
+meses_vendas = obter_meses_vendas(arquivo_vendas)
+
 print(f"Arquivo de estoque encontrado: {arquivo_estoque.name}")
 print(f"Arquivo de vendas encontrado: {arquivo_vendas.name}")
+print(f"Meses encontrados: {meses_vendas}")
 
 estoque = ler_txt_a_partir_do_cabecalho(arquivo_estoque)
 estoque = limpar_linhas_sem_produto(estoque, "CodProduto")
@@ -351,20 +405,16 @@ colunas_vendas = [
 for coluna in colunas_vendas:
     vendas[coluna] = vendas[coluna].apply(numero_br)
 
-lojas = gerar_lojas(estoque, vendas)
-rede = gerar_rede(estoque, vendas)
+lojas = gerar_lojas(estoque, vendas, meses_vendas)
+rede = gerar_rede(estoque, vendas, meses_vendas)
 
 pasta_saida = Path("saida")
 pasta_saida.mkdir(exist_ok=True)
 
-from datetime import datetime
-
-fabricante = rede["FABRICANTE"].dropna().iloc[0]
-
+fabricante = rede["FABRICANTE"].replace(0, pd.NA).dropna().iloc[0]
 data_hoje = datetime.now().strftime("%d.%m")
 
 nome_arquivo = f"Mapa de Vendas - {fabricante} {data_hoje}.xlsx"
-
 arquivo_saida = pasta_saida / nome_arquivo
 
 
