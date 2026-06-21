@@ -258,8 +258,28 @@ def formatar_excel(caminho_arquivo):
     wb.save(caminho_arquivo)
     
 
-arquivo_estoque = Path("entrada/Estoque Abbott.txt")
-arquivo_vendas = Path("entrada/Vendas Abbott.txt")
+pasta_entrada = Path("entrada")
+
+arquivos_estoque = list(pasta_entrada.glob("*Estoque*.txt"))
+arquivos_vendas = list(pasta_entrada.glob("*Vendas*.txt"))
+
+if len(arquivos_estoque) == 0:
+    raise FileNotFoundError("Nenhum arquivo de Estoque encontrado na pasta entrada.")
+
+if len(arquivos_vendas) == 0:
+    raise FileNotFoundError("Nenhum arquivo de Vendas encontrado na pasta entrada.")
+
+if len(arquivos_estoque) > 1:
+    raise ValueError("Mais de um arquivo de Estoque encontrado. Deixe apenas um arquivo de Estoque na pasta entrada.")
+
+if len(arquivos_vendas) > 1:
+    raise ValueError("Mais de um arquivo de Vendas encontrado. Deixe apenas um arquivo de Vendas na pasta entrada.")
+
+arquivo_estoque = arquivos_estoque[0]
+arquivo_vendas = arquivos_vendas[0]
+
+print(f"Arquivo de estoque encontrado: {arquivo_estoque.name}")
+print(f"Arquivo de vendas encontrado: {arquivo_vendas.name}")
 
 estoque = ler_txt_a_partir_do_cabecalho(arquivo_estoque)
 estoque = limpar_linhas_sem_produto(estoque, "CodProduto")
