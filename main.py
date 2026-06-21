@@ -37,7 +37,6 @@ def ler_txt_a_partir_do_cabecalho(caminho: Path) -> pd.DataFrame:
         raise ValueError(f"Cabeçalho CodFilial não encontrado em {caminho.name}")
 
     conteudo_limpo = "".join(linhas[linha_cabecalho:])
-
     df = pd.read_csv(StringIO(conteudo_limpo), sep=",", dtype=str)
 
     df.columns = df.columns.str.strip()
@@ -52,9 +51,6 @@ def obter_meses_vendas(caminho: Path) -> list[str]:
 
     for indice, linha in enumerate(linhas):
         if "MesDataVenda" in linha:
-            if indice + 1 >= len(linhas):
-                raise ValueError("Linha dos meses não encontrada após MesDataVenda.")
-
             linha_meses = linhas[indice + 1].strip()
             partes = linha_meses.split(",")
 
@@ -71,26 +67,31 @@ def obter_meses_vendas(caminho: Path) -> list[str]:
     raise ValueError("Marcador MesDataVenda não encontrado no arquivo de vendas.")
 
 
-def nomes_colunas_vendas(meses: list[str]) -> dict:
-    meses = [mes.upper() for mes in meses[:4]]
+def meses_por_modo(meses: list[str], modo: str) -> list[str]:
+    if modo == "padrao":
+        return meses[:4]
 
-    colunas_qt = [
-        "QtdeItem",
-        "QtdeItem.1",
-        "QtdeItem.2",
-        "QtdeItem.3",
+    if modo == "anual":
+        return meses
+
+    raise ValueError("Modo de relatório inválido. Use 'padrao' ou 'anual'.")
+
+
+def nomes_colunas_vendas(meses: list[str], modo: str = "padrao") -> dict:
+    meses_usados = meses_por_modo(meses, modo)
+
+    colunas_qt = ["QtdeItem"] + [
+        f"QtdeItem.{i}" for i in range(1, len(meses_usados))
     ]
 
-    colunas_vlr = [
-        "VlrLiqVenda",
-        "VlrLiqVenda.1",
-        "VlrLiqVenda.2",
-        "VlrLiqVenda.3",
+    colunas_vlr = ["VlrLiqVenda"] + [
+        f"VlrLiqVenda.{i}" for i in range(1, len(meses_usados))
     ]
 
     renomear = {}
 
-    for i, mes in enumerate(meses):
+    for i, mes in enumerate(meses_usados):
+        mes = mes.upper()
         renomear[colunas_qt[i]] = f"QT {mes}"
         renomear[colunas_vlr[i]] = f"VLR {mes}"
 
@@ -103,10 +104,27 @@ def limpar_linhas_sem_produto(df: pd.DataFrame, coluna_produto: str) -> pd.DataF
     return df
 
 
+def colunas_vendas_originais(meses: list[str], modo: str) -> list[str]:
+    meses_usados = meses_por_modo(meses, modo)
+
+    colunas = []
+
+    for i in range(len(meses_usados)):
+        if i == 0:
+            colunas.append("QtdeItem")
+            colunas.append("VlrLiqVenda")
+        else:
+            colunas.append(f"QtdeItem.{i}")
+            colunas.append(f"VlrLiqVenda.{i}")
+
+    return colunas
+
+
 def gerar_lojas(
     estoque: pd.DataFrame,
     vendas: pd.DataFrame,
     meses: list[str],
+    modo: str = "padrao",
 ) -> pd.DataFrame:
     lojas = estoque.merge(
         vendas,
@@ -140,6 +158,8 @@ def gerar_lojas(
     lojas["FABRICANTE"] = lojas["Fabricante_est"].fillna(lojas["Fabricante_ven"])
     lojas["Linha"] = lojas["Linha_est"].fillna(lojas["Linha_ven"])
 
+    colunas_vendas = colunas_vendas_originais(meses, modo)
+
     lojas_final = lojas[
         [
             "CodFilial",
@@ -152,18 +172,11 @@ def gerar_lojas(
             "QtEstoqueComercial",
             "QUANTIDADE ESTOQUE CD ATUAL",
             "MediaF",
-            "QtdeItem",
-            "VlrLiqVenda",
-            "QtdeItem.1",
-            "VlrLiqVenda.1",
-            "QtdeItem.2",
-            "VlrLiqVenda.2",
-            "QtdeItem.3",
-            "VlrLiqVenda.3",
         ]
+        + colunas_vendas
     ].copy()
 
-    renomear_vendas = nomes_colunas_vendas(meses)
+    renomear_vendas = nomes_colunas_vendas(meses, modo)
 
     lojas_final = lojas_final.rename(
         columns={
@@ -184,6 +197,7 @@ def gerar_rede(
     estoque: pd.DataFrame,
     vendas: pd.DataFrame,
     meses: list[str],
+    modo: str = "padrao",
 ) -> pd.DataFrame:
     estoque_lojas = estoque[estoque["CodFilial"] != "900"]
     estoque_cd = estoque[estoque["CodFilial"] == "900"]
@@ -221,20 +235,14 @@ def gerar_rede(
         }
     )
 
-    vendas_agrupadas = vendas.groupby("CódigoProduto", as_index=False).agg(
-        {
-            "QtdeItem": "sum",
-            "VlrLiqVenda": "sum",
-            "QtdeItem.1": "sum",
-            "VlrLiqVenda.1": "sum",
-            "QtdeItem.2": "sum",
-            "VlrLiqVenda.2": "sum",
-            "QtdeItem.3": "sum",
-            "VlrLiqVenda.3": "sum",
-        }
-    )
+    agregacoes = {}
 
-    renomear_vendas = nomes_colunas_vendas(meses)
+    for coluna in colunas_vendas_originais(meses, modo):
+        agregacoes[coluna] = "sum"
+
+    vendas_agrupadas = vendas.groupby("CódigoProduto", as_index=False).agg(agregacoes)
+
+    renomear_vendas = nomes_colunas_vendas(meses, modo)
 
     vendas_agrupadas = vendas_agrupadas.rename(
         columns={
@@ -266,13 +274,12 @@ def gerar_rede(
         "MEDIAF UN GERAL",
     ]
 
-    for mes in meses[:4]:
+    for mes in meses_por_modo(meses, modo):
         mes = mes.upper()
         colunas_finais.append(f"QT {mes}")
         colunas_finais.append(f"VLR {mes}")
 
     rede = rede[colunas_finais].copy()
-
     rede = rede.fillna(0)
 
     return rede
@@ -350,6 +357,20 @@ def formatar_excel(caminho_arquivo):
     wb.save(caminho_arquivo)
 
 
+# ==========================
+# CONFIGURAÇÃO DO RELATÓRIO
+# ==========================
+
+modo_relatorio = "anual"
+# Opções:
+# "padrao" = Padrão - 3 meses, ou seja, mês atual + 3 anteriores
+# "anual" = todos os meses existentes no arquivo de vendas
+
+
+# ==========================
+# ARQUIVOS DE ENTRADA
+# ==========================
+
 pasta_entrada = Path("entrada")
 
 arquivos_estoque = list(pasta_entrada.glob("*Estoque*.txt"))
@@ -381,6 +402,12 @@ meses_vendas = obter_meses_vendas(arquivo_vendas)
 print(f"Arquivo de estoque encontrado: {arquivo_estoque.name}")
 print(f"Arquivo de vendas encontrado: {arquivo_vendas.name}")
 print(f"Meses encontrados: {meses_vendas}")
+print(f"Modo do relatório: {modo_relatorio}")
+
+
+# ==========================
+# LEITURA DOS TXT
+# ==========================
 
 estoque = ler_txt_a_partir_do_cabecalho(arquivo_estoque)
 estoque = limpar_linhas_sem_produto(estoque, "CodProduto")
@@ -388,25 +415,29 @@ estoque = limpar_linhas_sem_produto(estoque, "CodProduto")
 vendas = ler_txt_a_partir_do_cabecalho(arquivo_vendas)
 vendas = limpar_linhas_sem_produto(vendas, "CódigoProduto")
 
+
+# ==========================
+# CONVERSÃO NUMÉRICA
+# ==========================
+
 estoque["MediaF"] = estoque["MediaF"].apply(numero_br)
 estoque["QtEstoqueComercial"] = estoque["QtEstoqueComercial"].apply(numero_br)
 
-colunas_vendas = [
-    "QtdeItem",
-    "VlrLiqVenda",
-    "QtdeItem.1",
-    "VlrLiqVenda.1",
-    "QtdeItem.2",
-    "VlrLiqVenda.2",
-    "QtdeItem.3",
-    "VlrLiqVenda.3",
-]
-
-for coluna in colunas_vendas:
+for coluna in colunas_vendas_originais(meses_vendas, modo_relatorio):
     vendas[coluna] = vendas[coluna].apply(numero_br)
 
-lojas = gerar_lojas(estoque, vendas, meses_vendas)
-rede = gerar_rede(estoque, vendas, meses_vendas)
+
+# ==========================
+# GERA RELATÓRIOS
+# ==========================
+
+lojas = gerar_lojas(estoque, vendas, meses_vendas, modo_relatorio)
+rede = gerar_rede(estoque, vendas, meses_vendas, modo_relatorio)
+
+
+# ==========================
+# EXPORTA EXCEL
+# ==========================
 
 pasta_saida = Path("saida")
 pasta_saida.mkdir(exist_ok=True)
@@ -417,12 +448,16 @@ data_hoje = datetime.now().strftime("%d.%m")
 nome_arquivo = f"Mapa de Vendas - {fabricante} {data_hoje}.xlsx"
 arquivo_saida = pasta_saida / nome_arquivo
 
-
 with pd.ExcelWriter(arquivo_saida, engine="openpyxl") as writer:
     rede.to_excel(writer, sheet_name="Rede", index=False)
     lojas.to_excel(writer, sheet_name="Lojas", index=False)
 
 formatar_excel(arquivo_saida)
+
+
+# ==========================
+# CONFIRMAÇÃO
+# ==========================
 
 print("Rede gerada:", len(rede), "linhas")
 print("Lojas geradas:", len(lojas), "linhas")
