@@ -247,7 +247,6 @@ def formatar_excel(caminho_arquivo):
 
         ws.auto_filter.ref = ws.dimensions
         ws.freeze_panes = "A2"
-
         ws.row_dimensions[1].height = 30
 
         for cell in ws[1]:
@@ -279,6 +278,29 @@ def formatar_excel(caminho_arquivo):
                 largura + 2,
                 50
             )
+
+        for coluna in ws.iter_cols(min_row=2):
+
+            cabecalho = ws.cell(
+                row=1,
+                column=coluna[0].column
+            ).value
+
+            if cabecalho is None:
+                continue
+
+            cabecalho = str(cabecalho).upper()
+
+            for celula in coluna:
+
+                if "VLR" in cabecalho or "VENDA LIQUIDA" in cabecalho:
+                    celula.number_format = 'R$ #,##0.00'
+
+                elif "QTDE" in cabecalho or "QT " in cabecalho or "ESTOQUE" in cabecalho:
+                    celula.number_format = '#,##0'
+
+                elif "MEDIAF" in cabecalho:
+                    celula.number_format = '#,##0.00'
 
     wb.save(caminho_arquivo)
     
