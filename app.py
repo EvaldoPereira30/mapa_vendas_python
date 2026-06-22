@@ -15,10 +15,20 @@ def gerar_relatorio():
             check=True,
         )
 
+        nome_arquivo = ""
+
+        for linha in resultado.stdout.splitlines():
+            if "Arquivo gerado com sucesso:" in linha:
+                nome_arquivo = linha.replace(
+                    "Arquivo gerado com sucesso:",
+                    ""
+                ).strip()
+
         messagebox.showinfo(
             "Relatório gerado",
-            "Mapa de Vendas gerado com sucesso!\n\n" + resultado.stdout
-        )
+            f"Mapa de Vendas gerado com sucesso!\n\n"
+            f"Arquivo:\n{nome_arquivo}"
+)
 
     except subprocess.CalledProcessError as erro:
         mensagem_erro = erro.stderr or erro.stdout or "Erro desconhecido."
